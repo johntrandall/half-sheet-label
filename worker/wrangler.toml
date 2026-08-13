@@ -1,0 +1,23 @@
+# Cloudflare Worker: shared "which half is next" counter for half-sheet-label.
+#
+# Deploy (deferred until Cloudflare account details are decided):
+#   cd worker
+#   npm install
+#   npx wrangler secret put SHARED_SECRET   # same token goes in each Mac's config.toml
+#   npx wrangler deploy
+#
+# The client (state.py CloudflareHalfState) degrades to each machine's local
+# file when this Worker is unreachable, so deployment is optional/non-blocking.
+
+name = "half-sheet-label-state"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[durable_objects.bindings]]
+name = "HALF_COUNTER"
+class_name = "HalfCounter"
+
+# New DO classes use the SQLite-backed storage tier.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["HalfCounter"]

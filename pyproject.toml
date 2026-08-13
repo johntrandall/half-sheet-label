@@ -1,0 +1,26 @@
+[project]
+name = "half-sheet-label"
+version = "0.1.0"
+description = "Re-impose an already-rendered label PDF onto Avery 8126/5126 half-sheet (5.5x8.5, 2-up) stock and send it to a laser printer's bypass tray. Tracks whether the next label goes on the top or bottom half so a sheet can be fed through twice."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "John Randall", email = "john@johnrandall.com" }]
+dependencies = [
+  "pypdf>=4.2",
+]
+
+[project.scripts]
+half-sheet-label = "half_sheet_label.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/half_sheet_label"]
+
+# External runtime dependency NOT installable via pip — the inked-bounding-box
+# measurement shells out to Ghostscript's `bbox` device. The Homebrew formula
+# declares `depends_on "ghostscript"`; for a bare `uv`/pip install, `brew install
+# ghostscript` must be present on PATH as `gs`.

@@ -1,0 +1,32 @@
+# half-sheet-label configuration.
+# Copy to $XDG_CONFIG_HOME/half-sheet-label/config.toml (i.e. ~/.config/half-sheet-label/config.toml).
+# Every section is optional; the tool works with no config file at all.
+
+[printer]
+name = "Athena"           # default CUPS printer
+# Where the half-sheet LABEL stock feeds from. Today Athena is single-tray, so
+# labels feed one sheet at a time from the front bypass tray. TARGET once an
+# optional lower cassette is installed: label_slot = "tray-2" (requires the
+# Brother driver to expose tray-2 — likely a re-add of the printer). Normal,
+# non-label printing is unaffected: that's governed by Athena's CUPS default
+# InputSlot, which we're setting to tray-1 separately.
+label_slot = "by-pass-tray"
+
+[layout]
+margin_in = 0.2           # white margin inside each half-label
+
+# --- Shared state (optional) -------------------------------------------------
+# Default backend is "local": per-user file, no network. Switch to "cloudflare"
+# for one household-wide counter. On network failure the CLI falls back to this
+# machine's last-used value automatically.
+[state]
+backend = "local"         # "local" | "cloudflare"
+# url   = "https://half-sheet-label-state.<subdomain>.workers.dev"
+# token = "…shared secret matching the Worker's SHARED_SECRET…"
+# path  = "~/.local/state/half-sheet-label/state.json"   # override local file location
+
+# --- Named crop presets (optional) -------------------------------------------
+# For sources that render label + packing-slip on one page. Fractions are
+# l,b,r,t of the source page (0–1). Use with:  half-sheet-label label.pdf --source clicknship
+# [sources.clicknship]
+# crop = [0.0, 0.5, 1.0, 1.0]   # top half of the source page only
