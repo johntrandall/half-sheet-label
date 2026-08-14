@@ -11,7 +11,7 @@ class HalfSheetLabel < Formula
   desc "Impose a rendered label PDF onto half-sheet 2-up stock and print it"
   homepage "https://github.com/johntrandall/half-sheet-label"
   url "https://github.com/johntrandall/half-sheet-label/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000" # TODO: fill at release
+  sha256 "09857d60eeaef38a313730bad938495e5e515b5961b1ecf535cc033848833875"
   license "MIT"
   head "https://github.com/johntrandall/half-sheet-label.git", branch: "main"
 
