@@ -25,7 +25,12 @@ from .config import load_config
 from .impose import impose
 from .state import _other, get_backend
 
-BYPASS_SLOT = "by-pass-tray"
+# Label stock lives in Tray 2 (sticker paper) by design; Athena's Tray 1 holds
+# regular paper for normal printing. Until an optional Tray 2 cassette is
+# installed and the driver exposes "tray-2", we fall back to the hand-fed
+# bypass slot (see _resolve_slot).
+DEFAULT_LABEL_SLOT = "tray-2"
+FALLBACK_SLOT = "by-pass-tray"
 
 
 def _resolve_crop(args, cfg) -> tuple[float, float, float, float] | None:
@@ -39,6 +44,32 @@ def _resolve_crop(args, cfg) -> tuple[float, float, float, float] | None:
         if crop:
             return tuple(float(x) for x in crop)  # type: ignore[return-value]
     return None
+
+
+def _printer_slots(printer: str) -> list[str] | None:
+    """Available InputSlot values for a printer, via lpoptions. None if unknown."""
+    try:
+        out = subprocess.run(["lpoptions", "-p", printer, "-l"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (subprocess.SubprocessError, OSError):
+        return None
+    for line in out.splitlines():
+        if line.startswith("InputSlot"):
+            values = line.split(":", 1)[1].split()
+            return [v.lstrip("*") for v in values]
+    return None
+
+
+def _resolve_slot(printer: str, requested: str) -> str:
+    """Use the requested slot, or fall back to the bypass tray with a warning
+    if the printer doesn't expose it yet (e.g. Tray 2 not installed)."""
+    slots = _printer_slots(printer)
+    if slots is None or requested in slots:
+        return requested
+    fallback = FALLBACK_SLOT if FALLBACK_SLOT in slots else (slots[0] if slots else requested)
+    print(f"  ⚠ '{requested}' not available on {printer} "
+          f"(slots: {', '.join(slots)}) — using '{fallback}'")
+    return fallback
 
 
 def _banner(half: str, summary: dict, printer: str, offline: bool) -> None:
@@ -68,7 +99,7 @@ def main(argv=None) -> int:
     ap.add_argument("--no-rotate", action="store_true",
                     help="keep the label upright even if rotating 90° would print larger")
     ap.add_argument("-c", "--copies", type=int, default=1)
-    ap.add_argument("--slot", help=f"CUPS InputSlot (default: {BYPASS_SLOT})")
+    ap.add_argument("--slot", help=f"CUPS InputSlot (default: config label_slot or {DEFAULT_LABEL_SLOT})")
     ap.add_argument("--no-advance", action="store_true",
                     help="print but do NOT change the remembered half")
     ap.add_argument("--status", action="store_true", help="show the remembered next half and exit")
@@ -117,7 +148,8 @@ def main(argv=None) -> int:
         print(f"\n  PREVIEW ONLY — not printed, half NOT advanced.\n  imposed PDF: {out}")
         return 0
 
-    slot = args.slot or cfg.get("printer", {}).get("label_slot", BYPASS_SLOT)
+    requested_slot = args.slot or cfg.get("printer", {}).get("label_slot", DEFAULT_LABEL_SLOT)
+    slot = _resolve_slot(printer, requested_slot)
     lp_cmd = ["lp", "-d", printer, "-o", f"InputSlot={slot}", "-o", "media=Letter",
               "-n", str(args.copies), str(out)]
     if args.dry_run:

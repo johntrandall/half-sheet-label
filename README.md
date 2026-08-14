@@ -85,16 +85,16 @@ See [`docs/config.example.toml`](docs/config.example.toml) and
 
 ## Where the label stock feeds from
 
-Today Athena (Brother HL-L3295CDW) is a single-tray printer, so label stock
-feeds one sheet at a time from the front **bypass tray** — which is what makes
-the feed-it-twice workflow natural. The CLI sends `-o InputSlot=by-pass-tray` by
-default; override per-run with `--slot` or permanently with `label_slot` in
-config.
+By design, **Tray 2 holds the sticker/label stock** and Tray 1 holds regular
+paper for normal printing. The CLI defaults to `label_slot = "tray-2"`.
 
-**Planned:** dedicate an optional lower cassette (**Tray 2**) to label stock so
-you don't hand-feed. When that tray is installed and the Brother driver exposes
-`tray-2`, set `label_slot = "tray-2"`. Normal (non-label) printing pulls from
-**Tray 1**, set as Athena's CUPS default independently of this tool.
+Athena (Brother HL-L3295CDW) is currently single-tray, so until an optional
+Tray 2 cassette is installed and the Brother driver exposes `tray-2`, the CLI
+**automatically falls back to the hand-fed bypass slot** and prints a warning —
+which is also what makes the feed-it-twice workflow work today. Once Tray 2 is
+in, the default just starts working with no config change. Override per-run with
+`--slot`. Normal (non-label) printing pulls from **Tray 1**, set as Athena's
+CUPS default independently of this tool.
 
 ## License
 

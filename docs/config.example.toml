@@ -4,13 +4,12 @@
 
 [printer]
 name = "Athena"           # default CUPS printer
-# Where the half-sheet LABEL stock feeds from. Today Athena is single-tray, so
-# labels feed one sheet at a time from the front bypass tray. TARGET once an
-# optional lower cassette is installed: label_slot = "tray-2" (requires the
-# Brother driver to expose tray-2 — likely a re-add of the printer). Normal,
-# non-label printing is unaffected: that's governed by Athena's CUPS default
-# InputSlot, which we're setting to tray-1 separately.
-label_slot = "by-pass-tray"
+# Where the half-sheet LABEL (sticker) stock feeds from. By design that's
+# Tray 2; Tray 1 holds regular paper for normal printing. Until an optional
+# Tray 2 cassette is installed and the Brother driver exposes "tray-2", the CLI
+# automatically falls back to the hand-fed bypass slot with a warning — so this
+# already-correct default works today and needs no change once Tray 2 is in.
+label_slot = "tray-2"
 
 [layout]
 margin_in = 0.2           # white margin inside each half-label
