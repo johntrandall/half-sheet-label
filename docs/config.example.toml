@@ -10,13 +10,3 @@ name = "Athena"           # default CUPS printer
 # automatically falls back to the hand-fed bypass slot with a warning — so this
 # already-correct default works today and needs no change once Tray 2 is in.
 label_slot = "tray-2"
-
-# --- Shared state (optional) -------------------------------------------------
-# Default backend is "local": per-user file, no network. Switch to "cloudflare"
-# for one household-wide counter. On network failure the CLI falls back to this
-# machine's last-used value automatically.
-[state]
-backend = "local"         # "local" | "cloudflare"
-# url   = "https://half-sheet-label-state.<subdomain>.workers.dev"
-# token = "…shared secret matching the Worker's SHARED_SECRET…"
-# path  = "~/.local/state/half-sheet-label/state.json"   # override local file location

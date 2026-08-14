@@ -1,14 +1,11 @@
 """half-sheet-label command line.
 
-Ties together: config -> state backend -> imposition -> printing.
+Ties together: config -> imposition -> printing.
 
-Half selection (per John, 2026-08-13):
-  * default (no --half): use the REMEMBERED next half, show it, print, then flip
-    the remembered value. "Last use drives the next default."
-  * --half top|bottom: explicit override; after printing on half X the next
-    default is still set to the other half of that sheet.
-Network-unreachable behavior: the cloudflare backend falls back to this
-machine's last-used value (see state.py) and the CLI prints an offline notice.
+Always prints the TOP half by default (per John, 2026-08-14). Re-feeding a sheet
+after the top label has been peeled off jams the printer, so there is no
+top/bottom counter: to reuse a partially-used sheet, flip it so the free label is
+on top and print again. --half bottom is a rarely-needed manual override.
 """
 
 from __future__ import annotations
@@ -23,7 +20,6 @@ from pathlib import Path
 from . import __version__
 from .config import load_config
 from .impose import LabelTooBig, impose
-from .state import _other, get_backend
 
 # Label stock lives in Tray 2 (sticker paper) by design; Athena's Tray 1 holds
 # regular paper for normal printing. Until an optional Tray 2 cassette is
@@ -59,7 +55,7 @@ def _resolve_slot(printer: str, requested: str) -> str:
     return fallback
 
 
-def _banner(half: str, summary: dict, printer: str, offline: bool) -> None:
+def _banner(half: str, summary: dict, printer: str) -> None:
     rot = " (rotated 90°)" if summary["rotated_deg"] else ""
     size = "100% actual size" if summary["actual_size"] else f"scaled {summary['scale']}×"
     w, h = summary["source_size_in"]
@@ -67,8 +63,6 @@ def _banner(half: str, summary: dict, printer: str, offline: bool) -> None:
     print(f"    label {w}×{h}in @ {size}")
     if summary.get("warning"):
         print(f"    ⚠ {summary['warning']}")
-    if offline:
-        print("    ⚠ shared state offline — using THIS machine's last-used value")
 
 
 def main(argv=None) -> int:
@@ -79,8 +73,9 @@ def main(argv=None) -> int:
     )
     ap.add_argument("input", nargs="?", help="label PDF to impose")
     ap.add_argument("-P", "--printer", help="CUPS printer (default: config or Athena)")
-    ap.add_argument("--half", choices=["auto", "top", "bottom"], default="auto",
-                    help="which half to print on (default: auto = remembered next half)")
+    ap.add_argument("--half", choices=["top", "bottom"], default="top",
+                    help="which half to print on (default: top — flip the paper to reuse "
+                         "the other label; re-feeding a peeled sheet jams the printer)")
     ap.add_argument("-p", "--preview", action="store_true",
                     help="impose and open in Preview WITHOUT printing (half not advanced)")
     ap.add_argument("--no-rotate", action="store_true",
@@ -90,10 +85,6 @@ def main(argv=None) -> int:
                          "(barcodes may stop scanning)")
     ap.add_argument("-c", "--copies", type=int, default=1)
     ap.add_argument("--slot", help=f"CUPS InputSlot (default: config label_slot or {DEFAULT_LABEL_SLOT})")
-    ap.add_argument("--no-advance", action="store_true",
-                    help="print but do NOT change the remembered half")
-    ap.add_argument("--status", action="store_true", help="show the remembered next half and exit")
-    ap.add_argument("--reset", choices=["top", "bottom"], help="set the remembered next half and exit")
     ap.add_argument("--dry-run", action="store_true", help="print the lp command instead of running it")
     ap.add_argument("--config", help="path to config.toml")
     ap.add_argument("-V", "--version", action="version", version=f"half-sheet-label {__version__}")
@@ -104,26 +95,13 @@ def main(argv=None) -> int:
                or cfg.get("printer", {}).get("name")
                or os.environ.get("HALF_SHEET_LABEL_PRINTER")
                or "Athena")
-    backend = get_backend(cfg)
-
-    if args.reset:
-        backend.set_half(printer, args.reset)
-        print(f"{printer}: next label set to {args.reset.upper()} half")
-        return 0
-
-    if args.status:
-        nh = backend.next_half(printer)
-        note = "  (offline — local value)" if getattr(backend, "degraded", False) else ""
-        print(f"{printer}: next label → {nh.upper()} half{note}")
-        return 0
-
     if not args.input:
-        ap.error("input PDF required (or use --status / --reset)")
+        ap.error("input PDF required")
     input_pdf = Path(args.input).expanduser()
     if not input_pdf.is_file():
         ap.error(f"no such file: {input_pdf}")
 
-    half = backend.next_half(printer) if args.half == "auto" else args.half
+    half = args.half
 
     out = Path(tempfile.mkdtemp(prefix="half-sheet-label-")) / f"{input_pdf.stem}-{half}.pdf"
     try:
@@ -131,12 +109,11 @@ def main(argv=None) -> int:
                          allow_rotate=not args.no_rotate, allow_scale=args.scale)
     except LabelTooBig as exc:
         ap.error(str(exc))
-    offline = getattr(backend, "degraded", False)
-    _banner(half, summary, printer, offline)
+    _banner(half, summary, printer)
 
     if args.preview:
         subprocess.run(["open", "-a", "Preview", str(out)], check=False)
-        print(f"\n  PREVIEW ONLY — not printed, half NOT advanced.\n  imposed PDF: {out}")
+        print(f"\n  PREVIEW ONLY — not printed.\n  imposed PDF: {out}")
         return 0
 
     requested_slot = args.slot or cfg.get("printer", {}).get("label_slot", DEFAULT_LABEL_SLOT)
@@ -150,16 +127,9 @@ def main(argv=None) -> int:
     result = subprocess.run(lp_cmd, capture_output=True, text=True)
     if result.returncode != 0:
         sys.stderr.write((result.stderr or result.stdout).strip() + "\n")
-        sys.stderr.write("  PRINT FAILED — remembered half NOT advanced.\n")
         return result.returncode
     if result.stdout.strip():
         print(" ", result.stdout.strip())
-
-    if not args.no_advance:
-        new_default = _other(half)
-        backend.set_half(printer, new_default)
-        note = "  (offline — saved locally)" if getattr(backend, "degraded", False) else ""
-        print(f"  next default for {printer}: {new_default.upper()} half{note}")
     return 0
 
 

@@ -2,9 +2,8 @@
 
 Print an already-rendered label PDF onto **Avery 8126 / 5126 half-sheet stock**
 (a Letter sheet carrying two 8.5″×5.5″ peel-off shipping labels) and send it to a
-laser printer's bypass tray. It remembers whether the next label goes on the
-**top** or **bottom** half, so you can run one sheet through the printer twice
-and use both labels.
+laser printer. It prints the **top** half; to reuse the other label on a
+partially-used sheet, flip the sheet so the free label is on top and print again.
 
 It does **not** lay out an address for you — that's a different tool
 ([`mailing-label`](https://github.com/johntrandall) does 4×2 cut-and-tape). This
@@ -35,18 +34,14 @@ cd half-sheet-label && ./install.sh    # needs: python3, pypdf
 ## Usage
 
 ```bash
-# Print onto the remembered next half (top on a fresh sheet), then flip the memory.
+# Impose the label onto the top half and print it.
 half-sheet-label label.pdf
 
 # Always preview on-screen first — the imposed PDF opens in Preview, nothing prints.
 half-sheet-label label.pdf --preview
 
-# Force a specific half.
+# Force the bottom half (rarely needed — usually just flip the paper instead).
 half-sheet-label label.pdf --half bottom
-
-# See / reset which half is next for a printer.
-half-sheet-label --status
-half-sheet-label --reset top
 
 # A different printer, or more copies.
 half-sheet-label label.pdf -P Apollo -c 2
@@ -56,38 +51,11 @@ half-sheet-label label.pdf --no-rotate
 half-sheet-label label.pdf --scale        # only if it won't fit even rotated (barcodes!)
 ```
 
-**Workflow for both labels on one sheet:**
-
-1. `half-sheet-label first.pdf` → prints on the **top** half. Take the sheet out.
-2. Put the *same sheet* back in the bypass tray.
-3. `half-sheet-label second.pdf` → it now defaults to the **bottom** half.
-
-The CLI always shows `▶ TOP HALF` / `▶ BOTTOM HALF` before printing so you can
-confirm or override — the remembered value is a convenience, never blind.
-
-## Which half is "next" — and sharing it across Macs
-
-The top/bottom state is a property of the *physical printer and the half-used
-sheet*, not of a person. By default it's stored per-user at
-`$XDG_STATE_HOME/half-sheet-label/state.json` (i.e. `~/.local/state/…`).
-
-Optionally, a tiny **Cloudflare Worker** (`worker/`) can hold one shared counter
-for the whole household — no NAS, no mount. If the network is unreachable the
-CLI **falls back to this machine's last-used value** and prints an offline
-notice, so a shared counter never blocks a print. Enable it in `config.toml`:
-
-```toml
-[printer]
-name = "Athena"
-
-[state]
-backend = "cloudflare"
-url = "https://half-sheet-label-state.<subdomain>.workers.dev"
-token = "…shared secret…"
-```
-
-See [`docs/config.example.toml`](docs/config.example.toml) and
-[`worker/README.md`](worker/README.md).
+**Reusing a half-used sheet:** always print the **top** half. To use the other
+label on a partially-used sheet, **flip the sheet around** so the unused label is
+in the top position, and print again. Re-feeding a sheet after the top label has
+been peeled off jams the printer, so this tool never prints the bottom of an
+already-used sheet.
 
 ## Where the label stock feeds from
 

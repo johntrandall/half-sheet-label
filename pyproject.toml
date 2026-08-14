@@ -1,7 +1,7 @@
 [project]
 name = "half-sheet-label"
 version = "0.1.0"
-description = "Re-impose an already-rendered label PDF onto Avery 8126/5126 half-sheet (5.5x8.5, 2-up) stock and send it to a laser printer's bypass tray. Tracks whether the next label goes on the top or bottom half so a sheet can be fed through twice."
+description = "Re-impose an already-rendered label PDF onto Avery 8126/5126 half-sheet (5.5x8.5, 2-up) stock at 100% actual size (barcode-safe) and print it. Always uses the top half; flip the sheet to reuse the other label."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
