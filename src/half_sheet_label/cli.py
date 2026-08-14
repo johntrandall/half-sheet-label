@@ -22,7 +22,7 @@ from pathlib import Path
 
 from . import __version__
 from .config import load_config
-from .impose import impose
+from .impose import LabelTooBig, impose
 from .state import _other, get_backend
 
 # Label stock lives in Tray 2 (sticker paper) by design; Athena's Tray 1 holds
@@ -31,19 +31,6 @@ from .state import _other, get_backend
 # bypass slot (see _resolve_slot).
 DEFAULT_LABEL_SLOT = "tray-2"
 FALLBACK_SLOT = "by-pass-tray"
-
-
-def _resolve_crop(args, cfg) -> tuple[float, float, float, float] | None:
-    if args.crop:
-        parts = [float(x) for x in args.crop.split(",")]
-        if len(parts) != 4:
-            raise SystemExit("--crop expects l,b,r,t fractions, e.g. 0,0.5,1,1")
-        return tuple(parts)  # type: ignore[return-value]
-    if args.source:
-        crop = cfg.get("sources", {}).get(args.source, {}).get("crop")
-        if crop:
-            return tuple(float(x) for x in crop)  # type: ignore[return-value]
-    return None
 
 
 def _printer_slots(printer: str) -> list[str] | None:
@@ -73,10 +60,13 @@ def _resolve_slot(printer: str, requested: str) -> str:
 
 
 def _banner(half: str, summary: dict, printer: str, offline: bool) -> None:
-    arrow = "▶"
-    rot = " (rotated 90°)" if summary["rotated_90"] else ""
-    print(f"\n  {arrow} {half.upper()} HALF  →  {printer}{rot}")
-    print(f"    content: {summary['content_source']}   scale: {summary['scale']}×")
+    rot = " (rotated 90°)" if summary["rotated_deg"] else ""
+    size = "100% actual size" if summary["actual_size"] else f"scaled {summary['scale']}×"
+    w, h = summary["source_size_in"]
+    print(f"\n  ▶ {half.upper()} HALF  →  {printer}{rot}")
+    print(f"    label {w}×{h}in @ {size}")
+    if summary.get("warning"):
+        print(f"    ⚠ {summary['warning']}")
     if offline:
         print("    ⚠ shared state offline — using THIS machine's last-used value")
 
@@ -93,11 +83,11 @@ def main(argv=None) -> int:
                     help="which half to print on (default: auto = remembered next half)")
     ap.add_argument("-p", "--preview", action="store_true",
                     help="impose and open in Preview WITHOUT printing (half not advanced)")
-    ap.add_argument("--margin", type=float, help="inches inside the half-label (default 0.2)")
-    ap.add_argument("--crop", help="isolate label from a busy page: l,b,r,t fractions 0–1")
-    ap.add_argument("--source", help="named crop preset from config [sources.NAME]")
     ap.add_argument("--no-rotate", action="store_true",
-                    help="keep the label upright even if rotating 90° would print larger")
+                    help="don't rotate a too-tall label to landscape to make it fit")
+    ap.add_argument("--scale", action="store_true",
+                    help="allow shrinking below 100%% if a label won't fit even rotated "
+                         "(barcodes may stop scanning)")
     ap.add_argument("-c", "--copies", type=int, default=1)
     ap.add_argument("--slot", help=f"CUPS InputSlot (default: config label_slot or {DEFAULT_LABEL_SLOT})")
     ap.add_argument("--no-advance", action="store_true",
@@ -134,12 +124,13 @@ def main(argv=None) -> int:
         ap.error(f"no such file: {input_pdf}")
 
     half = backend.next_half(printer) if args.half == "auto" else args.half
-    crop = _resolve_crop(args, cfg)
-    margin = args.margin if args.margin is not None else cfg.get("layout", {}).get("margin_in", 0.2)
 
     out = Path(tempfile.mkdtemp(prefix="half-sheet-label-")) / f"{input_pdf.stem}-{half}.pdf"
-    summary = impose(input_pdf, out, half, margin_in=margin, crop_frac=crop,
-                     allow_rotate=not args.no_rotate)
+    try:
+        summary = impose(input_pdf, out, half,
+                         allow_rotate=not args.no_rotate, allow_scale=args.scale)
+    except LabelTooBig as exc:
+        ap.error(str(exc))
     offline = getattr(backend, "degraded", False)
     _banner(half, summary, printer, offline)
 
@@ -151,7 +142,7 @@ def main(argv=None) -> int:
     requested_slot = args.slot or cfg.get("printer", {}).get("label_slot", DEFAULT_LABEL_SLOT)
     slot = _resolve_slot(printer, requested_slot)
     lp_cmd = ["lp", "-d", printer, "-o", f"InputSlot={slot}", "-o", "media=Letter",
-              "-n", str(args.copies), str(out)]
+              "-o", "print-scaling=none", "-n", str(args.copies), str(out)]
     if args.dry_run:
         print("\n  DRY RUN:", " ".join(lp_cmd))
         return 0

@@ -20,7 +20,5 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/half_sheet_label"]
 
-# External runtime dependency NOT installable via pip — the inked-bounding-box
-# measurement shells out to Ghostscript's `bbox` device. The Homebrew formula
-# declares `depends_on "ghostscript"`; for a bare `uv`/pip install, `brew install
-# ghostscript` must be present on PATH as `gs`.
+# Pure-Python: imposition is pypdf only, no external binaries. Printing/preview
+# use macOS `lp` / `open`, which are always present.

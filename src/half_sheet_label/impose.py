@@ -1,153 +1,105 @@
 """Geometry: place a rendered label PDF onto one half of a Letter sheet.
 
-Coordinate units are PDF points (1/72 inch). The target stock is Avery
-8126/5126: a Letter (8.5x11 in) backing sheet carrying two 8.5x5.5 in peel
-labels, stacked. So we print Letter media and drop content onto the top or
-bottom half.
+The target stock is Avery 8126/5126/5526: a Letter (8.5×11 in) backing sheet
+carrying two 8.5×5.5 in peel labels, stacked. So we print Letter media and drop
+content onto the top or bottom half.
 
-Imposition is fully deterministic — no AI. We take the source page's MediaBox
-and the actual *inked* bounding box (measured by Ghostscript's `bbox` device),
-fit that content into the target half (rotating 90 deg when it yields a larger
-scale), and center it. The only case this can't disambiguate from geometry alone
-is a source that is label+packing-slip on one page; pass --crop for that.
+CORRECTNESS RULE (ported from ~/Library/Personal/half-sheet-label, 2026-06-24):
+shipping/return labels carry barcodes. Everything is placed at **100% actual
+size** and printed with CUPS `print-scaling=none`. A portrait label taller than
+the 5.5 in cell is ROTATED 90° to landscape (which fits 8.5×5.5) rather than
+shrunk — scanners tolerate rotation, but downscaling a barcode below its minimum
+module width breaks scanning. Only `--scale` (allow_scale=True) shrinks, with a
+warning. This is a domain invariant; do not "optimize" it into scale-to-fill.
 """
 
 from __future__ import annotations
 
-import re
-import shutil
-import subprocess
+import math
 from pathlib import Path
 
-from pypdf import PdfReader, PdfWriter, Transformation
-from pypdf.generic import RectangleObject
+from pypdf import PageObject, PdfReader, PdfWriter, Transformation
 
-# Letter sheet and half-label footprints, in points.
-LETTER_W = 612.0   # 8.5 in
-LETTER_H = 792.0   # 11 in
-HALF_H = 396.0     # 5.5 in
-
-_HIRES_BBOX = re.compile(
-    r"%%HiResBoundingBox:\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)"
-)
+PT = 72.0
+LETTER_W = 8.5 * PT   # 612
+LETTER_H = 11.0 * PT  # 792
+CELL_W = 8.5 * PT     # 612  full width
+CELL_H = 5.5 * PT     # 396  half height
 
 
-def measure_ink(pdf_path: Path) -> tuple[float, float, float, float] | None:
-    """Return the inked bounding box (llx, lly, urx, ury) of page 1, or None.
-
-    Uses Ghostscript's bbox device. Returns None if gs is missing or fails so
-    callers can fall back to the full MediaBox.
-    """
-    gs = shutil.which("gs")
-    if not gs:
-        return None
-    try:
-        proc = subprocess.run(
-            [gs, "-q", "-dBATCH", "-dNOPAUSE", "-dFirstPage=1", "-dLastPage=1",
-             "-sDEVICE=bbox", str(pdf_path)],
-            capture_output=True, text=True, timeout=30,
-        )
-    except (subprocess.SubprocessError, OSError):
-        return None
-    # gs writes the bbox comments to stderr.
-    m = None
-    for line in (proc.stderr or "").splitlines():
-        hit = _HIRES_BBOX.search(line)
-        if hit:
-            m = hit
-    if not m:
-        return None
-    return tuple(float(m.group(i)) for i in range(1, 5))  # type: ignore[return-value]
+class LabelTooBig(ValueError):
+    """Raised when a label won't fit the 8.5×5.5 cell even rotated, without --scale."""
 
 
-def _target_rect(half: str, margin_pt: float) -> tuple[float, float, float, float]:
-    """Usable (x, y, w, h) inside the chosen half, after margin."""
-    if half not in ("top", "bottom"):
-        raise ValueError(f"half must be 'top' or 'bottom', got {half!r}")
-    y0 = HALF_H if half == "top" else 0.0
-    return (
-        margin_pt,
-        y0 + margin_pt,
-        LETTER_W - 2 * margin_pt,
-        HALF_H - 2 * margin_pt,
-    )
-
-
-def _build_transform(work: tuple[float, float, float, float],
-                     target: tuple[float, float, float, float],
-                     allow_rotate: bool = True):
-    """Map the working rect (page coords) into the target rect, rotating if it fits better."""
-    wl, wb, wr, wt = work
-    w, h = wr - wl, wt - wb
-    tx, ty, tw, th = target
-    s_norot = min(tw / w, th / h)
-    s_rot = min(tw / h, th / w)
-    rotate = allow_rotate and (s_rot > s_norot)
-    s = s_rot if rotate else s_norot
-
-    t = Transformation().translate(-wl, -wb)
-    if rotate:
-        # +90deg about origin maps [0,w]x[0,h] -> [-h,0]x[0,w]; shift back to +x.
-        t = t.rotate(90).translate(h, 0)
-        cw, ch = h, w
-    else:
-        cw, ch = w, h
-    t = t.scale(s)
-    off_x = tx + (tw - cw * s) / 2
-    off_y = ty + (th - ch * s) / 2
-    t = t.translate(off_x, off_y)
-    return t, rotate, s
+def _transformed_bbox(w: float, h: float, deg: int, s: float):
+    """Bounding box of a w×h box after scale s then rotation deg (degrees CCW)."""
+    rad = math.radians(deg)
+    cos, sin = math.cos(rad), math.sin(rad)
+    xs, ys = [], []
+    for x, y in ((0, 0), (w, 0), (0, h), (w, h)):
+        sx, sy = x * s, y * s
+        xs.append(sx * cos - sy * sin)
+        ys.append(sx * sin + sy * cos)
+    return min(xs), min(ys), max(xs), max(ys)
 
 
 def impose(
     input_pdf: Path,
     output_pdf: Path,
     half: str,
-    margin_in: float = 0.2,
-    crop_frac: tuple[float, float, float, float] | None = None,
     allow_rotate: bool = True,
+    allow_scale: bool = False,
 ) -> dict:
-    """Impose page 1 of input_pdf onto `half` of a Letter page. Returns a summary dict."""
-    reader = PdfReader(str(input_pdf))
-    page = reader.pages[0]
-    mb = page.mediabox
-    ml, mbot, mr, mtop = float(mb.left), float(mb.bottom), float(mb.right), float(mb.top)
+    """Place page 1 of input_pdf, at 100% size, onto `half` of a blank Letter page.
 
-    if crop_frac is not None:
-        fl, fb, fr, ft = crop_frac
-        pw, ph = mr - ml, mtop - mbot
-        work = (ml + fl * pw, mbot + fb * ph, ml + fr * pw, mbot + ft * ph)
-        source = "crop"
-    else:
-        ink = measure_ink(input_pdf)
-        if ink:
-            # clamp to mediabox
-            work = (max(ink[0], ml), max(ink[1], mbot), min(ink[2], mr), min(ink[3], mtop))
-            source = "ink-bbox"
-        else:
-            work = (ml, mbot, mr, mtop)
-            source = "mediabox"
+    Returns a summary dict. Raises LabelTooBig if the label overflows the cell and
+    allow_scale is False.
+    """
+    if half not in ("top", "bottom"):
+        raise ValueError(f"half must be 'top' or 'bottom', got {half!r}")
 
-    margin_pt = margin_in * 72.0
-    target = _target_rect(half, margin_pt)
-    transform, rotated, scale = _build_transform(work, target, allow_rotate=allow_rotate)
+    page = PdfReader(str(input_pdf)).pages[0]
+    page.transfer_rotation_to_content()  # bake /Rotate; we control orientation
+    vw, vh = float(page.mediabox.width), float(page.mediabox.height)
 
-    # Clip the source to the working rect so anything outside (e.g. a receipt)
-    # is not carried along, then place it.
-    page.mediabox = RectangleObject([work[0], work[1], work[2], work[3]])
-    page.cropbox = RectangleObject([work[0], work[1], work[2], work[3]])
+    def fits(w, h):
+        return w <= CELL_W + 0.5 and h <= CELL_H + 0.5
 
+    deg = 0
+    if not fits(vw, vh) and allow_rotate and fits(vh, vw):
+        deg = 90
+    placed_w, placed_h = (vh, vw) if deg == 90 else (vw, vh)
+
+    s = 1.0
+    warning = None
+    if not fits(placed_w, placed_h):
+        s = min(CELL_W / placed_w, CELL_H / placed_h)
+        if not allow_scale:
+            raise LabelTooBig(
+                f"'{input_pdf.name}' is {placed_w / PT:.2f}\" × {placed_h / PT:.2f}\" and "
+                f"won't fit the 8.5×5.5 cell even rotated. Re-run with --scale to shrink "
+                f"to {s * 100:.0f}% (may affect barcode scanning)."
+            )
+        warning = f"scaled to {s * 100:.0f}% to fit — verify barcodes still scan"
+
+    cell_oy = CELL_H if half == "top" else 0.0
+    minx, miny, maxx, maxy = _transformed_bbox(vw, vh, deg, s)
+    tx = (CELL_W - (maxx - minx)) / 2 - minx
+    ty = cell_oy + (CELL_H - (maxy - miny)) / 2 - miny
+
+    base = PageObject.create_blank_page(width=LETTER_W, height=LETTER_H)
+    base.merge_transformed_page(page, Transformation().scale(s).rotate(deg).translate(tx, ty))
     writer = PdfWriter()
-    blank = writer.add_blank_page(width=LETTER_W, height=LETTER_H)
-    blank.merge_transformed_page(page, transform)
+    writer.add_page(base)
     output_pdf.parent.mkdir(parents=True, exist_ok=True)
     with open(output_pdf, "wb") as fh:
         writer.write(fh)
 
     return {
         "half": half,
-        "content_source": source,
-        "work_pts": tuple(round(v, 1) for v in work),
-        "rotated_90": rotated,
-        "scale": round(scale, 3),
+        "rotated_deg": deg,
+        "scale": round(s, 3),
+        "actual_size": s == 1.0,
+        "source_size_in": (round(vw / PT, 2), round(vh / PT, 2)),
+        "warning": warning,
     }

@@ -15,8 +15,7 @@ class HalfSheetLabel < Formula
   license "MIT"
   head "https://github.com/johntrandall/half-sheet-label.git", branch: "main"
 
-  depends_on "ghostscript" # inked-bbox measurement (gs -sDEVICE=bbox)
-  depends_on :macos        # prints via CUPS `lp`, previews via `open -a Preview`
+  depends_on :macos # prints via CUPS `lp`, previews via `open -a Preview`
   depends_on "python@3.13"
 
   resource "pypdf" do

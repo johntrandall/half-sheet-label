@@ -9,7 +9,6 @@ prefix="${XDG_DATA_HOME:-$HOME/.local/share}/half-sheet-label"
 bindir="$HOME/.local/bin"
 
 command -v python3 >/dev/null || { echo "error: python3 not found"; exit 1; }
-command -v gs >/dev/null || echo "warning: ghostscript ('gs') not found — inked-bbox auto-fit will fall back to the full page. Install with: brew install ghostscript"
 
 echo "==> creating venv at $prefix/venv"
 python3 -m venv "$prefix/venv"

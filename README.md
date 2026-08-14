@@ -9,9 +9,14 @@ and use both labels.
 It does **not** lay out an address for you — that's a different tool
 ([`mailing-label`](https://github.com/johntrandall) does 4×2 cut-and-tape). This
 takes whatever label a shipping site / Preview / Click-N-Ship already produced,
-scales and centers it onto the correct half, and prints. Imposition is fully
-deterministic (Ghostscript measures the inked area; no AI, no cloud round-trip
-required to print).
+places it **at 100% actual size** onto the correct half, and prints with
+`print-scaling=none`.
+
+**Barcodes are why:** shipping/return labels carry barcodes, so nothing is ever
+shrunk by default. A portrait label taller than the 5.5″ cell is *rotated* 90° to
+landscape to fit — scanners tolerate rotation, but downscaling can break a
+barcode. `--scale` opts into shrinking (with a warning) for the rare oversized
+label. Pure Python (pypdf); no AI, no cloud round-trip required to print.
 
 ## Install
 
@@ -20,13 +25,11 @@ brew tap johntrandall/tap
 brew install half-sheet-label
 ```
 
-Requires macOS and Ghostscript (pulled in automatically by the formula).
-
-Manual install for non-brew users:
+macOS only. Manual install for non-brew users:
 
 ```bash
 git clone https://github.com/johntrandall/half-sheet-label.git
-cd half-sheet-label && ./install.sh    # needs: python3, ghostscript, pypdf
+cd half-sheet-label && ./install.sh    # needs: python3, pypdf
 ```
 
 ## Usage
@@ -45,9 +48,12 @@ half-sheet-label label.pdf --half bottom
 half-sheet-label --status
 half-sheet-label --reset top
 
-# A different printer, more copies, or a busy page you need to crop to the label.
+# A different printer, or more copies.
 half-sheet-label label.pdf -P Apollo -c 2
-half-sheet-label label.pdf --crop 0,0.5,1,1     # top-left→ isolate top half of the source
+
+# Keep a tall label upright instead of auto-rotating; or allow shrink-to-fit.
+half-sheet-label label.pdf --no-rotate
+half-sheet-label label.pdf --scale        # only if it won't fit even rotated (barcodes!)
 ```
 
 **Workflow for both labels on one sheet:**
