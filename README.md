@@ -11,11 +11,15 @@ takes whatever label a shipping site / Preview / Click-N-Ship already produced,
 places it **at 100% actual size** onto the correct half, and prints with
 `print-scaling=none`.
 
-**Barcodes are why:** shipping/return labels carry barcodes, so nothing is ever
-shrunk by default. A portrait label taller than the 5.5″ cell is *rotated* 90° to
-landscape to fit — scanners tolerate rotation, but downscaling can break a
-barcode. `--scale` opts into shrinking (with a warning) for the rare oversized
-label. Pure Python (pypdf); no AI, no cloud round-trip required to print.
+**Barcodes are why:** shipping/return labels carry barcodes, so it avoids
+shrinking. It first **smart-trims** the label out of a full page (dropping
+whitespace and the browser print header/footer) so a label already ≤ the cell
+stays at **100%**; a portrait label taller than the 5.5″ cell is *rotated* 90°
+rather than shrunk. Only when the trimmed label still overflows does it scale
+down — as little as possible — and warn you to check the barcode. `--no-scale`
+refuses to shrink at all; `--no-trim` disables trimming. Trimming uses
+Ghostscript; without it, oversized labels just scale more. No AI, no cloud
+round-trip to print.
 
 ## Install
 
@@ -28,7 +32,7 @@ macOS only. Manual install for non-brew users:
 
 ```bash
 git clone https://github.com/johntrandall/half-sheet-label.git
-cd half-sheet-label && ./install.sh    # needs: python3, pypdf
+cd half-sheet-label && ./install.sh    # needs: python3, pypdf, ghostscript (for trimming)
 ```
 
 ## Usage
@@ -46,9 +50,11 @@ half-sheet-label label.pdf --half bottom
 # A different printer, or more copies.
 half-sheet-label label.pdf -P Apollo -c 2
 
-# Keep a tall label upright instead of auto-rotating; or allow shrink-to-fit.
-half-sheet-label label.pdf --no-rotate
-half-sheet-label label.pdf --scale        # only if it won't fit even rotated (barcodes!)
+# Full-page labels (e.g. a browser-printed return label) auto-trim to the label
+# and scale only if needed — nothing to pass. To tune the behavior:
+half-sheet-label label.pdf --no-rotate    # keep a tall label upright (don't rotate 90°)
+half-sheet-label label.pdf --no-trim      # use the whole page, don't crop to the label
+half-sheet-label label.pdf --no-scale     # refuse to shrink below 100% (error instead)
 ```
 
 **Reusing a half-used sheet:** always print the **top** half. To use the other

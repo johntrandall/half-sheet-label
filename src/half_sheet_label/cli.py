@@ -20,6 +20,7 @@ from pathlib import Path
 from . import __version__
 from .config import load_config
 from .impose import LabelTooBig, impose
+from .trim import smart_crop
 
 # Label stock lives in Tray 2 (sticker paper) by design; Athena's Tray 1 holds
 # regular paper for normal printing. Until an optional Tray 2 cassette is
@@ -55,12 +56,13 @@ def _resolve_slot(printer: str, requested: str) -> str:
     return fallback
 
 
-def _banner(half: str, summary: dict, printer: str) -> None:
+def _banner(half: str, summary: dict, printer: str, trimmed: bool = False) -> None:
     rot = " (rotated 90°)" if summary["rotated_deg"] else ""
     size = "100% actual size" if summary["actual_size"] else f"scaled {summary['scale']}×"
+    tnote = ", trimmed to label" if trimmed else ""
     w, h = summary["source_size_in"]
     print(f"\n  ▶ {half.upper()} HALF  →  {printer}{rot}")
-    print(f"    label {w}×{h}in @ {size}")
+    print(f"    label {w}×{h}in @ {size}{tnote}")
     if summary.get("warning"):
         print(f"    ⚠ {summary['warning']}")
 
@@ -69,7 +71,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="half-sheet-label",
         description="Impose a rendered label PDF onto Avery 8126/5126 half-sheet "
-                    "(5.5×8.5, 2-up) stock and print to the bypass tray.",
+                    "(5.5×8.5, 2-up) stock and print it. Auto-trims the label out of a "
+                    "full page and keeps it at 100% (barcode-safe) when it fits, scaling "
+                    "only when it must.",
     )
     ap.add_argument("input", nargs="?", help="label PDF to impose")
     ap.add_argument("-P", "--printer", help="CUPS printer (default: config or Athena)")
@@ -80,9 +84,11 @@ def main(argv=None) -> int:
                     help="impose and open in Preview WITHOUT printing (half not advanced)")
     ap.add_argument("--no-rotate", action="store_true",
                     help="don't rotate a too-tall label to landscape to make it fit")
-    ap.add_argument("--scale", action="store_true",
-                    help="allow shrinking below 100%% if a label won't fit even rotated "
-                         "(barcodes may stop scanning)")
+    ap.add_argument("--no-trim", action="store_true",
+                    help="don't auto-crop the label out of a full page (use the whole page)")
+    ap.add_argument("--no-scale", action="store_true",
+                    help="never shrink below 100%%: error out if the label won't fit even "
+                         "rotated, instead of scaling it down (fully protects barcodes)")
     ap.add_argument("-c", "--copies", type=int, default=1)
     ap.add_argument("--slot", help=f"CUPS InputSlot (default: config label_slot or {DEFAULT_LABEL_SLOT})")
     ap.add_argument("--dry-run", action="store_true", help="print the lp command instead of running it")
@@ -102,14 +108,24 @@ def main(argv=None) -> int:
         ap.error(f"no such file: {input_pdf}")
 
     half = args.half
+    workdir = Path(tempfile.mkdtemp(prefix="half-sheet-label-"))
+    out = workdir / f"{input_pdf.stem}-{half}.pdf"
 
-    out = Path(tempfile.mkdtemp(prefix="half-sheet-label-")) / f"{input_pdf.stem}-{half}.pdf"
+    # Smart-fit: crop the label out of a full page (drops whitespace + browser
+    # header/footer) so it stays at/near 100%, then impose — scaling down only if
+    # the trimmed label still overflows the 5.5×8.5 cell.
+    source, trimmed = input_pdf, False
+    if not args.no_trim:
+        cropped, _box = smart_crop(input_pdf, workdir)
+        if cropped:
+            source, trimmed = cropped, True
+
     try:
-        summary = impose(input_pdf, out, half,
-                         allow_rotate=not args.no_rotate, allow_scale=args.scale)
+        summary = impose(source, out, half,
+                         allow_rotate=not args.no_rotate, allow_scale=not args.no_scale)
     except LabelTooBig as exc:
-        ap.error(str(exc))
-    _banner(half, summary, printer)
+        ap.error(str(exc) + "  (drop --no-scale to let it shrink to fit)")
+    _banner(half, summary, printer, trimmed)
 
     if args.preview:
         subprocess.run(["open", "-a", "Preview", str(out)], check=False)

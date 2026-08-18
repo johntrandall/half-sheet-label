@@ -1,6 +1,6 @@
 [project]
 name = "half-sheet-label"
-version = "0.1.0"
+version = "0.2.0"
 description = "Re-impose an already-rendered label PDF onto Avery 8126/5126 half-sheet (5.5x8.5, 2-up) stock at 100% actual size (barcode-safe) and print it. Always uses the top half; flip the sheet to reuse the other label."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,5 +20,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/half_sheet_label"]
 
-# Pure-Python: imposition is pypdf only, no external binaries. Printing/preview
-# use macOS `lp` / `open`, which are always present.
+# Imposition is pypdf only. Smart-fit trimming (cropping a label out of a full
+# page) shells out to Ghostscript — the Homebrew formula declares `depends_on
+# "ghostscript"`. If gs is absent the tool still works: it skips trimming and
+# scales oversized labels more. Printing/preview use macOS `lp` / `open`.

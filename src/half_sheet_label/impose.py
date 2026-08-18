@@ -77,8 +77,8 @@ def impose(
         if not allow_scale:
             raise LabelTooBig(
                 f"'{input_pdf.name}' is {placed_w / PT:.2f}\" × {placed_h / PT:.2f}\" and "
-                f"won't fit the 8.5×5.5 cell even rotated. Re-run with --scale to shrink "
-                f"to {s * 100:.0f}% (may affect barcode scanning)."
+                f"won't fit the 8.5×5.5 cell even rotated (would need to shrink to "
+                f"{s * 100:.0f}%, which may affect barcode scanning)."
             )
         warning = f"scaled to {s * 100:.0f}% to fit — verify barcodes still scan"
 
