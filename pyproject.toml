@@ -17,6 +17,10 @@ half-sheet-label = "half_sheet_label.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/half_sheet_label"]
 
