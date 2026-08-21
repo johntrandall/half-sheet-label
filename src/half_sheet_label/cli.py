@@ -105,8 +105,23 @@ def main(argv=None) -> int:
     ap.add_argument("--slot", help=f"CUPS InputSlot (default: config label_slot or {DEFAULT_LABEL_SLOT})")
     ap.add_argument("--dry-run", action="store_true", help="print the lp command instead of running it")
     ap.add_argument("--config", help="path to config.toml")
+    ap.add_argument("--install-pdf-service", action="store_true",
+                    help="add the Print-dialog entry (⌘P → PDF ▾ → Half-Sheet Label) and exit")
+    ap.add_argument("--uninstall-pdf-service", action="store_true",
+                    help="remove the Print-dialog entry and exit")
     ap.add_argument("-V", "--version", action="version", version=f"half-sheet-label {__version__}")
     args = ap.parse_args(argv)
+
+    if args.install_pdf_service:
+        from .pdf_service import install
+        app = install()
+        print(f"Installed Print-dialog entry: {app}")
+        print("Use it from any app: ⌘P → PDF ▾ (bottom-left) → Half-Sheet Label")
+        return 0
+    if args.uninstall_pdf_service:
+        from .pdf_service import uninstall
+        print("Removed the Print-dialog entry." if uninstall() else "Print-dialog entry was not installed.")
+        return 0
 
     cfg = load_config(Path(args.config) if args.config else None)
     printer = (args.printer
