@@ -5,4 +5,4 @@ See cli.py for the entry point. The package is intentionally thin: geometry in
 orchestration in `cli.py`.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"

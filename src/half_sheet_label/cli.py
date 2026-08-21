@@ -44,16 +44,28 @@ def _printer_slots(printer: str) -> list[str] | None:
     return None
 
 
+def _norm_slot(s: str) -> str:
+    return s.lower().replace("-", "").replace("_", "").replace(" ", "")
+
+
 def _resolve_slot(printer: str, requested: str) -> str:
-    """Use the requested slot, or fall back to the bypass tray with a warning
-    if the printer doesn't expose it yet (e.g. Tray 2 not installed)."""
+    """Resolve the requested slot to the printer's ACTUAL InputSlot value,
+    matching case/hyphen-insensitively — drivers name Tray 2 as either 'tray-2'
+    (AirPrint) or 'Tray2' (IPP-everywhere). Fall back to a bypass/manual slot if
+    the printer has no matching tray."""
     slots = _printer_slots(printer)
-    if slots is None or requested in slots:
+    if not slots:
         return requested
-    fallback = FALLBACK_SLOT if FALLBACK_SLOT in slots else (slots[0] if slots else requested)
-    print(f"  ⚠ '{requested}' not available on {printer} "
-          f"(slots: {', '.join(slots)}) — using '{fallback}'")
-    return fallback
+    want = _norm_slot(requested)
+    for s in slots:
+        if _norm_slot(s) == want:
+            return s
+    for s in slots:  # graceful fallback to a hand-feed slot
+        if _norm_slot(s) in ("bypasstray", "manual", "manualfeed", "multipurpose", "mptray"):
+            print(f"  ⚠ '{requested}' not on {printer} (slots: {', '.join(slots)}) — using '{s}'")
+            return s
+    print(f"  ⚠ '{requested}' not on {printer} (slots: {', '.join(slots)}) — using '{slots[0]}'")
+    return slots[0]
 
 
 def _banner(half: str, summary: dict, printer: str, trimmed: bool = False) -> None:

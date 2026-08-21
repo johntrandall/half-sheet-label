@@ -63,18 +63,19 @@ in the top position, and print again. Re-feeding a sheet after the top label has
 been peeled off jams the printer, so this tool never prints the bottom of an
 already-used sheet.
 
-## Where the label stock feeds from
+## Where the label stock feeds from — Tray 2
 
-By design, **Tray 2 holds the sticker/label stock** and Tray 1 holds regular
-paper for normal printing. The CLI defaults to `label_slot = "tray-2"`.
+**Load your half-sheet label stock in Tray 2. Tray 1 stays regular paper.**
 
-Athena (Brother HL-L3295CDW) is currently single-tray, so until an optional
-Tray 2 cassette is installed and the Brother driver exposes `tray-2`, the CLI
-**automatically falls back to the hand-fed bypass slot** and prints a warning —
-which is also what makes the feed-it-twice workflow work today. Once Tray 2 is
-in, the default just starts working with no config change. Override per-run with
-`--slot`. Normal (non-label) printing pulls from **Tray 1**, set as Athena's
-CUPS default independently of this tool.
+The tool sends every label to **Tray 2** by default (`label_slot = "tray-2"`,
+matched case-insensitively so it works whether your driver calls the tray
+`tray-2` or `Tray2`). Normal, everyday printing keeps pulling from **Tray 1**, so
+you never have to swap paper. On a printer whose label tray isn't Tray 2,
+override per run with `--slot "<InputSlot>"` or set `label_slot` in
+`~/.config/half-sheet-label/config.toml`. If the printer has no matching tray,
+the tool falls back to the hand-feed/bypass slot and warns.
+
+At 179, Athena's Tray 2 holds the Avery 8126/5126 half-sheet labels.
 
 ## License
 
